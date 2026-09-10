@@ -1,0 +1,4 @@
+"use client";
+import {FormEvent,useState} from "react";
+import {useRouter} from "next/navigation";
+export default function Login(){const [password,setPassword]=useState("");const [error,setError]=useState("");const router=useRouter();async function submit(e:FormEvent){e.preventDefault();setError("");const r=await fetch("/api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({password})});if(r.ok){router.push("/");router.refresh()}else setError("Wrong password")}return <section className="login"><div className="loginCard"><div className="eyebrow">PRIVATE ACCESS</div><h1>Watchtower</h1><p>Enter the dashboard password.</p><form onSubmit={submit}><input autoFocus type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password"/><button>Enter dashboard</button></form>{error&&<div className="error">{error}</div>}</div></section>}
