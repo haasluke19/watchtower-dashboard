@@ -11,10 +11,14 @@ function ago(v?: string) {
   return `${Math.floor(s / 3600)}h ago`;
 }
 function n(v: any, d = 0) { return typeof v === "number" ? v.toFixed(d) : "—"; }
+function duration(v?: number) {
+  if (typeof v !== "number") return "—";
+  if (v < 60) return `${v.toFixed(1)}s`;
+  return `${(v / 60).toFixed(1)}m`;
+}
 function stamp(v?: string) {
   if (!v) return "—";
-  const d = new Date(v);
-  return `${d.toISOString().replace("T", " ").replace("Z", " UTC")}`;
+  return new Date(v).toISOString().replace("T", " ").replace("Z", " UTC");
 }
 
 export default function Home() {
@@ -40,6 +44,7 @@ export default function Home() {
 
   const s = data?.status;
   const changes = data?.changes || [];
+  const isBulk = s?.poll_mode === "bulk_by_name";
 
   return <div className="stack">
     <section className="hero">
@@ -49,31 +54,39 @@ export default function Home() {
     {error && <div className="banner">{error}</div>}
 
     <section className="cards">
-      <div className="card"><label>Targets</label><strong>{s?.targets?.toLocaleString?.() || "—"}</strong><small>{s?.tiers?.critical || 0} critical · {s?.tiers?.normal || 0} normal</small></div>
-      <div className="card"><label>Current RPS</label><strong>{n(s?.rps, 2)}</strong><small>{s?.due?.toLocaleString?.() || 0} currently due</small></div>
+      <div className="card"><label>Tracked names</label><strong>{s?.targets?.toLocaleString?.() || "—"}</strong><small>{s?.held?.toLocaleString?.() || 0} held · {s?.relinquished?.toLocaleString?.() || 0} relinquished</small></div>
+      <div className="card"><label>Current RPS</label><strong>{n(s?.rps, 2)}</strong><small>{isBulk ? `bulk ×${s?.batch_size || 10}` : `${s?.due?.toLocaleString?.() || 0} currently due`}</small></div>
+      <div className="card"><label>Broad sweep</label><strong>{duration(s?.broad_sweep_seconds)}</strong><small>all held names</small></div>
+      <div className="card"><label>Critical sweep</label><strong>{duration(s?.critical_sweep_seconds)}</strong><small>{s?.critical?.toLocaleString?.() || s?.tiers?.critical || 0} critical names</small></div>
       <div className="card"><label>Latency</label><strong>{n(s?.latency?.p50, 1)} <em>ms</em></strong><small>p90 {n(s?.latency?.p90, 1)} · p99 {n(s?.latency?.p99, 1)}</small></div>
       <div className="card"><label>API Health</label><strong>{s?.error_total || 0} <em>errors</em></strong><small>{s?.rate_limited_total || 0} rate limits · {(s?.ok_total || 0).toLocaleString()} OK</small></div>
+      <div className="card"><label>Name checks</label><strong>{(s?.names_checked_total || 0).toLocaleString()}</strong><small>successful bulk observations</small></div>
+      <div className="card"><label>Mode</label><strong>{isBulk ? "BULK" : "LEGACY"}</strong><small>{isBulk ? "10 names per request" : "single-profile polling"}</small></div>
     </section>
 
     <section className="grid">
       <div className="panel span2">
-        <div className="panelHead"><div><div className="eyebrow">DETECTIONS</div><h2>Name changes</h2></div><span>{changes.length} recent</span></div>
+        <div className="panelHead"><div><div className="eyebrow">DETECTIONS</div><h2>Name events</h2></div><span>{changes.length} recent</span></div>
         {changes.length ? <div className="events">{changes.map((c: any) => {
           const legacy = Number(c.width_seconds) === 0 && c.last_seen_old_at === c.first_seen_new_at;
-          return <Link className="event eventLink" href={`/targets/${encodeURIComponent(c.uuid)}`} key={c._id}>
+          const targetKey = c.name || c.uuid;
+          const title = c.event_type === "relinquished"
+            ? `${c.old_name} relinquished${c.old_holder_new_name ? ` → holder became ${c.old_holder_new_name}` : ""}`
+            : `${c.old_name} → ${c.new_name}`;
+          return <Link className="event eventLink" href={`/targets/${encodeURIComponent(targetKey)}`} key={c._id}>
             <div className="eventIcon">↳</div>
             <div>
-              <strong>{c.old_name} <b>→</b> {c.new_name}</strong>
-              <small>{c.uuid}</small>
-              <small className="exactStamp">first new: {stamp(c.first_seen_new_at || c.detected_at)}</small>
+              <strong>{title}</strong>
+              <small>{c.old_holder_uuid || c.uuid}</small>
+              <small className="exactStamp">upper observation: {stamp(c.upper_at || c.first_seen_new_at || c.detected_at)}</small>
             </div>
             <div className="eventMeta">
-              <strong>{legacy ? "legacy detection" : `${n(c.width_seconds, 3)}s bracket`}</strong>
+              <strong>{legacy ? "legacy detection" : typeof c.width_seconds === "number" ? `${n(c.width_seconds, 3)}s bracket` : "open bracket"}</strong>
               <small>{ago(c.detected_at)}</small>
               <small>view details →</small>
             </div>
           </Link>;
-        })}</div> : <div className="empty"><div className="radar">◎</div><strong>No name changes detected yet</strong><span>Watchtower is collecting observations. Changes will appear here automatically.</span></div>}
+        })}</div> : <div className="empty"><div className="radar">◎</div><strong>No name events detected yet</strong><span>Watchtower is collecting observations. Relinquishments will appear here automatically.</span></div>}
       </div>
 
       <div className="panel">
