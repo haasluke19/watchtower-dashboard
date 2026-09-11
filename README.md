@@ -1,40 +1,33 @@
-# Watchtower Dashboard v1
+# Watchtower Dashboard
 
-Private Vercel dashboard for Minecraft Name Watchtower v0.6 using MongoDB Atlas.
+Private Vercel dashboard for Minecraft Name Watchtower using MongoDB Atlas.
 
-## Architecture
+## Current architecture
 
-- Watchtower continues writing authoritative data to local SQLite on the VPS.
-- v0.6 performs a best-effort Atlas sync every 30 seconds.
-- Atlas stores dashboard-facing status, target state, health snapshots, transitions, and a tiny validated command queue.
-- The Vercel dashboard reads Atlas. Priority edits create commands; the VPS validates and applies them to SQLite.
-- Atlas outages do not stop Minecraft polling.
-
-## Atlas setup
-
-1. Create an Atlas cluster and database user with read/write access to database `watchtower`.
-2. Add network access for the VPS. Vercel outbound IPs are not fixed on ordinary deployments, so if your Atlas setup requires IP allow-listing you may need an Atlas/Vercel-supported connectivity option or allow broader access with strong credentials. Never expose the URI in browser-side code.
-3. Copy the `mongodb+srv://...` connection string.
-
-Collections and indexes are created automatically by Watchtower v0.6 on first sync.
+- Watchtower v0.5.1 keeps SQLite on the VPS as the authoritative data store.
+- The poller uses MinecraftServices bulk-by-name lookups (up to 10 tracked names per request).
+- The VPS performs a best-effort Atlas sync every 30 seconds when `MONGODB_URI` is configured.
+- Atlas stores dashboard-facing status, name-centric target state, bulk health snapshots, relinquishment events, and the priority command queue.
+- The Vercel dashboard reads Atlas. Priority edits create commands; the VPS validates and applies them to SQLite on the next sync.
+- Atlas outages never stop Minecraft polling.
 
 ## VPS environment
 
-Add these variables to the systemd service environment (or an EnvironmentFile):
+Put the Atlas settings in `/etc/watchtower.env`:
 
-```
-MONGODB_URI=mongodb+srv://...
-MONGODB_DATABASE=watchtower
-WATCHTOWER_INSTANCE_ID=primary
+```bash
+MONGODB_URI='mongodb+srv://...'
+MONGODB_DATABASE='watchtower'
+WATCHTOWER_INSTANCE_ID='primary'
 ```
 
-Set `mongo_sync.enabled: true` in `config.yaml`, install requirements, and restart Watchtower.
+The v0.5.1 systemd service loads that file automatically. If an existing systemd drop-in already defines these variables, it also continues to work.
 
 ## Vercel environment
 
 Set:
 
-```
+```text
 MONGODB_URI=mongodb+srv://...
 MONGODB_DATABASE=watchtower
 WATCHTOWER_INSTANCE_ID=primary
@@ -42,11 +35,10 @@ DASHBOARD_PASSWORD=<long private password>
 AUTH_SECRET=<different long random string>
 ```
 
-Then deploy this folder to Vercel. The dashboard is password protected and the auth cookie is HTTP-only.
-
 ## Dashboard
 
-- `/` — online/offline heartbeat, corpus size, RPS, latency, API health, detections
-- `/targets` — searchable synced target corpus and priority management
+- `/` — online/offline heartbeat, held/relinquished counts, adaptive RPS, broad sweep time, critical sweep time, bulk name-check count, latency, API health, and recent name events.
+- `/targets` — searchable name-centric corpus with state and priority filtering.
+- `/targets/<name-or-uuid>` — detailed relinquishment bracket timing and holder information.
 
-Priority edits are asynchronous: the dashboard queues a command in Atlas; the VPS picks it up on the next sync cycle, validates it, updates SQLite, and eventually syncs the new target priority back to Atlas.
+Priority edits are asynchronous: the dashboard queues a command in Atlas; the VPS picks it up on the next sync cycle, validates it, updates SQLite, and syncs the new priority back to Atlas.
